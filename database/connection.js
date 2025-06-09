@@ -1,203 +1,111 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { isOnline } = require('./network');
+const offlineStorage = require('./offline-storage');
+const config = require('../config');
 
-let mysqlPool;
-let sqliteConnection;
-
-async function initializeDatabase() {
-  console.log('ℹ️ Initializing MySQL pool...');
-  mysqlPool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '123456789ya',
-    database: process.env.DB_NAME || 'menu_db',
+// MySQL connection pool
+const pool = mysql.createPool({
+    host: 'localhost',
+    user: 'root',
+    password: '123456789ya',
+    database: 'menu_db',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
-  });
+});
 
-  console.log('ℹ️ Initializing SQLite database...');
-  return new Promise((resolve, reject) => {
-    const dbPath = path.join(__dirname, 'pos-offline.db');
-    console.log(`ℹ️ Opening SQLite database at: ${dbPath}`);
-    sqliteConnection = new sqlite3.Database(dbPath, (err) => {
-      if (err) {
-        console.error('❌ SQLite connection failed:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ Connected to SQLite database');
-      resolve();
-    });
-  });
-}
+let isInitialized = false;
+let isClosing = false;
 
-async function initializeSyncTables() {
-  console.log('ℹ️ Initializing SQLite tables...');
-  return new Promise((resolve, reject) => {
-    if (!sqliteConnection) {
-      const err = new Error('SQLite connection not initialized');
-      console.error('❌ Failed to initialize sync tables:', err);
-      reject(err);
-      return;
+// Initialize database connection
+async function initializeDatabase() {
+    if (isInitialized) return true;
+    
+    try {
+        // Test MySQL connection
+        const connection = await pool.getConnection();
+        console.log('✅ MySQL connection established');
+        
+        // Test query to verify database access
+        const [result] = await connection.query('SELECT 1');
+        console.log('✅ Database query test successful');
+
+        // Fix image paths in database
+        console.log('ℹ️ Fixing image paths in database...');
+        await connection.query(`
+            UPDATE menu 
+            SET image = REPLACE(image, '/uploads/', 'uploads/') 
+            WHERE id > 0 AND image IS NOT NULL;
+        `);
+        console.log('✅ Fixed menu image paths');
+
+        await connection.query(`
+            UPDATE items 
+            SET image = REPLACE(image, '/uploads/', 'uploads/') 
+            WHERE item_id > 0 AND image IS NOT NULL;
+        `);
+        console.log('✅ Fixed items image paths');
+
+        await connection.query(`
+            UPDATE admins 
+            SET photo = REPLACE(photo, '/uploads/', 'uploads/') 
+            WHERE id > 0 AND photo IS NOT NULL;
+        `);
+        console.log('✅ Fixed admin photo paths');
+        
+        connection.release();
+        isInitialized = true;
+        return true;
+    } catch (err) {
+        console.error('❌ Failed to initialize MySQL:', err);
+        return false;
     }
-    sqliteConnection.serialize(() => {
-      try {
-        sqliteConnection.run(`
-          CREATE TABLE IF NOT EXISTS menu (
-            id INTEGER PRIMARY KEY,
-            categorie TEXT,
-            image TEXT
-          )
-        `);
-        sqliteConnection.run(`
-          CREATE TABLE IF NOT EXISTS items (
-            item_id INTEGER PRIMARY KEY,
-            item_name TEXT,
-            category_id INTEGER,
-            item_price REAL,
-            image TEXT,
-            FOREIGN KEY (category_id) REFERENCES menu(id)
-          )
-        `);
-        sqliteConnection.run(`
-          CREATE TABLE IF NOT EXISTS orders (
-            order_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            items TEXT,
-            total REAL,
-            status TEXT,
-            table_number INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        sqliteConnection.run(`
-          CREATE TABLE IF NOT EXISTS sync_status (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            last_sync TIMESTAMP,
-            sync_type TEXT
-          )
-        `);
-        sqliteConnection.run(`
-          CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY,
-            username TEXT,
-            password TEXT,
-            photo TEXT
-          )
-        `);
-        console.log('✅ SQLite tables initialized');
-        resolve();
-      } catch (err) {
-        console.error('❌ Failed to initialize sync tables:', err);
-        reject(err);
-      }
-    });
-  });
 }
 
-async function isOnline() {
-  try {
-    await mysqlPool.query('SELECT 1');
-    console.log('✅ MySQL connection confirmed');
-    return true;
-  } catch (err) {
-    console.warn('⚠️ MySQL connection unavailable:', err.message);
-    return false;
-  }
-}
-
+// Execute query (tries MySQL first, falls back to JSON)
 async function executeQuery(query, params = []) {
-  console.log(`ℹ️ Executing query: ${query} with params:`, params);
-  const online = await isOnline();
-  if (online) {
-    try {
-      const [results] = await mysqlPool.query(query, params);
-      console.log('✅ MySQL query executed successfully');
-      return results;
-    } catch (err) {
-      console.error('❌ MySQL query failed:', err);
-      throw err;
+    if (isClosing) {
+        throw new Error('Database is closing');
     }
-  } else {
-    return new Promise((resolve, reject) => {
-      if (!sqliteConnection) {
-        console.error('❌ SQLite query failed: Connection not initialized');
-        reject(new Error('SQLite connection not initialized'));
-        return;
-      }
-      sqliteConnection.all(query, params, (err, rows) => {
-        if (err) {
-          console.error('❌ SQLite query failed:', err);
-          reject(err);
-        } else {
-          console.log('✅ SQLite query executed successfully');
-          resolve(rows);
-        }
-      });
-    });
-  }
+    
+    console.log(`ℹ️ Executing query: ${query} with params:`, params);
+    
+    try {
+        // Always try MySQL first
+        const [results] = await pool.query(query, params);
+        console.log('✅ MySQL query executed successfully');
+        return results;
+    } catch (err) {
+        console.error('❌ MySQL query failed:', err);
+        // Only fall back to JSON storage if MySQL fails
+        console.log('ℹ️ Falling back to JSON storage');
+        return offlineStorage.getData(query, params);
+    }
 }
 
-async function syncOfflineChanges() {
-  console.log('ℹ️ Starting syncOfflineChanges...');
-  const online = await isOnline();
-  if (!online) {
-    console.warn('⚠️ Cannot sync offline changes: POS is offline');
-    return;
-  }
+// Close database connection
+async function closeDatabase() {
+    console.log('ℹ️ Closing database connections...');
+    isClosing = true;
 
-  if (!sqliteConnection) {
-    console.error('❌ SQLite connection not initialized in syncOfflineChanges');
-    return;
-  }
-
-  let pendingOrders = [];
-  try {
-    const result = sqliteConnection.prepare(
-      'SELECT * FROM orders WHERE status = "pending"'
-    ).all();
-    pendingOrders = Array.isArray(result) ? result : [];
-  } catch (err) {
-    console.error('❌ Failed to query pending orders:', err);
-    return;
-  }
-
-  if (pendingOrders.length === 0) {
-    console.log('ℹ️ No pending orders to sync');
-    return;
-  }
-
-  for (const order of pendingOrders) {
     try {
-      await executeQuery(
-        'INSERT INTO orders (order_id, items, total, status, table_number, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [
-          order.order_id,
-          order.items,
-          order.total,
-          order.status,
-          order.table_number,
-          order.created_at
-        ]
-      );
-      sqliteConnection.run(
-        'UPDATE orders SET status = "synced" WHERE order_id = ?',
-        [order.order_id]
-      );
-      console.log(`✅ Order ${order.order_id} synced to MySQL`);
+        await pool.end();
+        console.log('✅ MySQL pool closed');
     } catch (err) {
-      console.error(`❌ Failed to sync order ${order.order_id}:`, err);
+        console.error('❌ Error closing MySQL pool:', err);
     }
-  }
+
+    isInitialized = false;
+    isClosing = false;
 }
+
+// Initialize on startup
+initializeDatabase().catch(console.error);
 
 module.exports = {
-  initializeDatabase,
-  initializeSyncTables,
-  executeQuery,
-  syncOfflineChanges,
-  isOnline,
-  sqliteConnection
+    initializeDatabase,
+    executeQuery,
+    closeDatabase,
+    isOnline
 };

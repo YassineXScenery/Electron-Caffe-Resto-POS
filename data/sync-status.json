@@ -1,0 +1,281 @@
+{
+  "lastSync": "2025-06-09T20:00:30.657Z",
+  "pendingChanges": [
+    {
+      "type": "menu",
+      "action": "update",
+      "data": {
+        "categories": [
+          {
+            "id": 3,
+            "categorie": "Caffee",
+            "image": "uploads/image-1749078962156-832112935.jpg"
+          },
+          {
+            "id": 4,
+            "categorie": "Tee",
+            "image": "uploads/image-1749078978731-157629635.jpeg"
+          },
+          {
+            "id": 5,
+            "categorie": "Soda",
+            "image": "uploads/image-1749078990691-212651824.jpg"
+          },
+          {
+            "id": 6,
+            "categorie": "Pizza",
+            "image": "uploads/image-1749079012790-857288810.jpg"
+          },
+          {
+            "id": 7,
+            "categorie": "Milkshakes",
+            "image": "uploads/image-1749079034002-824894338.jpeg"
+          }
+        ],
+        "items": [
+          {
+            "item_id": 14,
+            "item_name": "Expresso ",
+            "category_id": 3,
+            "item_price": "2.00",
+            "image": "uploads/image-1749406820289-135241672.jpeg"
+          },
+          {
+            "item_id": 15,
+            "item_name": "Coka Cola",
+            "category_id": 5,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411509364-538956361.jpg"
+          },
+          {
+            "item_id": 16,
+            "item_name": "Fanta",
+            "category_id": 5,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411564273-340646623.webp"
+          },
+          {
+            "item_id": 17,
+            "item_name": "pizza neptune (mini)",
+            "category_id": 6,
+            "item_price": "6.50",
+            "image": "uploads/image-1749411583912-152678725.jpeg"
+          },
+          {
+            "item_id": 18,
+            "item_name": "Cappucin ",
+            "category_id": 3,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411610097-871575795.jpeg"
+          },
+          {
+            "item_id": 19,
+            "item_name": "Direct",
+            "category_id": 3,
+            "item_price": "3.50",
+            "image": "uploads/image-1749411643268-615887093.jpeg"
+          },
+          {
+            "item_id": 20,
+            "item_name": "Thé Vert",
+            "category_id": 4,
+            "item_price": "2.20",
+            "image": "uploads/image-1749411665662-795067613.jpg"
+          },
+          {
+            "item_id": 21,
+            "item_name": "MilkShake Chocolat",
+            "category_id": 7,
+            "item_price": "7.50",
+            "image": "uploads/image-1749411698202-375283028.jpg"
+          }
+        ]
+      },
+      "timestamp": "2025-06-09T19:57:52.044Z"
+    },
+    {
+      "type": "menu",
+      "action": "update",
+      "data": {
+        "categories": [
+          {
+            "id": 3,
+            "categorie": "Caffee",
+            "image": "uploads/image-1749078962156-832112935.jpg"
+          },
+          {
+            "id": 4,
+            "categorie": "Tee",
+            "image": "uploads/image-1749078978731-157629635.jpeg"
+          },
+          {
+            "id": 5,
+            "categorie": "Soda",
+            "image": "uploads/image-1749078990691-212651824.jpg"
+          },
+          {
+            "id": 6,
+            "categorie": "Pizza",
+            "image": "uploads/image-1749079012790-857288810.jpg"
+          },
+          {
+            "id": 7,
+            "categorie": "Milkshakes",
+            "image": "uploads/image-1749079034002-824894338.jpeg"
+          }
+        ],
+        "items": [
+          {
+            "item_id": 14,
+            "item_name": "Expresso ",
+            "category_id": 3,
+            "item_price": "2.00",
+            "image": "uploads/image-1749406820289-135241672.jpeg"
+          },
+          {
+            "item_id": 15,
+            "item_name": "Coka Cola",
+            "category_id": 5,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411509364-538956361.jpg"
+          },
+          {
+            "item_id": 16,
+            "item_name": "Fanta",
+            "category_id": 5,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411564273-340646623.webp"
+          },
+          {
+            "item_id": 17,
+            "item_name": "pizza neptune (mini)",
+            "category_id": 6,
+            "item_price": "6.50",
+            "image": "uploads/image-1749411583912-152678725.jpeg"
+          },
+          {
+            "item_id": 18,
+            "item_name": "Cappucin ",
+            "category_id": 3,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411610097-871575795.jpeg"
+          },
+          {
+            "item_id": 19,
+            "item_name": "Direct",
+            "category_id": 3,
+            "item_price": "3.50",
+            "image": "uploads/image-1749411643268-615887093.jpeg"
+          },
+          {
+            "item_id": 20,
+            "item_name": "Thé Vert",
+            "category_id": 4,
+            "item_price": "2.20",
+            "image": "uploads/image-1749411665662-795067613.jpg"
+          },
+          {
+            "item_id": 21,
+            "item_name": "MilkShake Chocolat",
+            "category_id": 7,
+            "item_price": "7.50",
+            "image": "uploads/image-1749411698202-375283028.jpg"
+          }
+        ]
+      },
+      "timestamp": "2025-06-09T20:00:25.743Z"
+    },
+    {
+      "type": "menu",
+      "action": "update",
+      "data": {
+        "categories": [
+          {
+            "id": 3,
+            "categorie": "Caffee",
+            "image": "uploads/image-1749078962156-832112935.jpg"
+          },
+          {
+            "id": 4,
+            "categorie": "Tee",
+            "image": "uploads/image-1749078978731-157629635.jpeg"
+          },
+          {
+            "id": 5,
+            "categorie": "Soda",
+            "image": "uploads/image-1749078990691-212651824.jpg"
+          },
+          {
+            "id": 6,
+            "categorie": "Pizza",
+            "image": "uploads/image-1749079012790-857288810.jpg"
+          },
+          {
+            "id": 7,
+            "categorie": "Milkshakes",
+            "image": "uploads/image-1749079034002-824894338.jpeg"
+          }
+        ],
+        "items": [
+          {
+            "item_id": 14,
+            "item_name": "Expresso ",
+            "category_id": 3,
+            "item_price": "2.00",
+            "image": "uploads/image-1749406820289-135241672.jpeg"
+          },
+          {
+            "item_id": 15,
+            "item_name": "Coka Cola",
+            "category_id": 5,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411509364-538956361.jpg"
+          },
+          {
+            "item_id": 16,
+            "item_name": "Fanta",
+            "category_id": 5,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411564273-340646623.webp"
+          },
+          {
+            "item_id": 17,
+            "item_name": "pizza neptune (mini)",
+            "category_id": 6,
+            "item_price": "6.50",
+            "image": "uploads/image-1749411583912-152678725.jpeg"
+          },
+          {
+            "item_id": 18,
+            "item_name": "Cappucin ",
+            "category_id": 3,
+            "item_price": "3.00",
+            "image": "uploads/image-1749411610097-871575795.jpeg"
+          },
+          {
+            "item_id": 19,
+            "item_name": "Direct",
+            "category_id": 3,
+            "item_price": "3.50",
+            "image": "uploads/image-1749411643268-615887093.jpeg"
+          },
+          {
+            "item_id": 20,
+            "item_name": "Thé Vert",
+            "category_id": 4,
+            "item_price": "2.20",
+            "image": "uploads/image-1749411665662-795067613.jpg"
+          },
+          {
+            "item_id": 21,
+            "item_name": "MilkShake Chocolat",
+            "category_id": 7,
+            "item_price": "7.50",
+            "image": "uploads/image-1749411698202-375283028.jpg"
+          }
+        ]
+      },
+      "timestamp": "2025-06-09T20:00:30.643Z"
+    }
+  ]
+}

@@ -2,13 +2,28 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const store = new Store();
+const express = require('express');
+const server = express();
 
 // Database & sync modules
-const { initializeDatabase, initializeSyncTables, sqliteConnection, closeDatabase } = require('./database/connection');
-const { syncFromRemote, syncAdmin, syncPendingOrders } = require('./database/sync');
+const { initializeDatabase, closeDatabase } = require('./database/connection');
+const { syncFromRemote, syncPendingChanges } = require('./database/sync');
+const { syncImages } = require('./database/image-sync');
+
+let mainWindow = null;
+let isQuitting = false;
+
+// Serve static files from public directory
+server.use(express.static(path.join(__dirname, 'public')));
+
+// Start the server
+const PORT = 3000;
+server.listen(PORT, () => {
+    console.log(`✅ Static file server running on port ${PORT}`);
+});
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 1000,
@@ -20,19 +35,82 @@ function createWindow() {
     }
   });
 
-  win.loadFile('renderer/index.html');
+  mainWindow.loadFile('renderer/index.html');
 
   if (process.env.NODE_ENV === 'development') {
-    win.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   }
 
-  win.webContents.on('did-finish-load', () => {
-    win.webContents.executeJavaScript(`
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`
       window.addEventListener('online', () => {
-        window.api.syncPendingOrders();
+        window.api.syncPendingChanges();
       });
     `).catch(err => console.error('❌ Failed to inject online listener:', err));
   });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+// Handle app quit
+app.on('window-all-closed', async () => {
+  if (process.platform !== 'darwin') {
+    isQuitting = true;
+    try {
+      console.log('ℹ️ Closing all windows, cleaning up...');
+      // Give a small delay to allow any pending operations to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await closeDatabase();
+      console.log('✅ Cleanup complete, quitting...');
+      app.quit();
+    } catch (err) {
+      console.error('❌ Error during cleanup:', err);
+      app.exit(1);
+    }
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+
+app.on('before-quit', async (event) => {
+  if (!isQuitting) {
+    event.preventDefault();
+    isQuitting = true;
+    try {
+      console.log('ℹ️ App quitting, cleaning up...');
+      // Give a small delay to allow any pending operations to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await closeDatabase();
+      console.log('✅ Cleanup complete, quitting...');
+      app.quit();
+    } catch (err) {
+      console.error('❌ Error during cleanup:', err);
+      app.exit(1);
+    }
+  }
+});
+
+async function performSync() {
+  try {
+    // Sync menu and orders
+    const synced = await syncFromRemote();
+    if (!synced) {
+      console.warn('⚠️ Menu sync skipped (offline or failed).');
+    }
+
+    const changesSynced = await syncPendingChanges();
+    if (!changesSynced) {
+      console.warn('⚠️ Pending changes sync skipped (offline or failed).');
+    }
+  } catch (err) {
+    console.error('❌ Sync failed:', err);
+  }
 }
 
 app.whenReady().then(async () => {
@@ -40,69 +118,13 @@ app.whenReady().then(async () => {
 
   try {
     await initializeDatabase();
-    await initializeSyncTables();
-    console.log('✅ Database & tables ready.');
+    console.log('✅ Database ready.');
+
+    await performSync();
+    createWindow();
   } catch (err) {
     console.error('❌ Database init failed:', err);
-  }
-
-  if (sqliteConnection) {
-    console.log('✅ SQLite connection available for syncs');
-    try {
-      const adminSynced = await syncAdmin();
-      if (!adminSynced) {
-        console.warn('⚠️ Admin sync skipped (offline or failed).');
-      }
-    } catch (err) {
-      console.error('❌ Admin sync failed:', err);
-    }
-
-    try {
-      const synced = await syncFromRemote();
-      if (!synced) {
-        console.warn('⚠️ Menu sync skipped (offline or failed).');
-      }
-    } catch (err) {
-      console.error('❌ Sync from remote failed:', err);
-    }
-
-    try {
-      const ordersSynced = await syncPendingOrders();
-      if (!ordersSynced) {
-        console.warn('⚠️ Pending orders sync skipped (offline or failed).');
-      }
-    } catch (err) {
-      console.error('❌ Pending orders sync failed:', err);
-    }
-  } else {
-    console.warn('⚠️ SQLite connection unavailable, skipping syncs');
-  }
-
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', async () => {
-  if (process.platform !== 'darwin') {
-    try {
-      await closeDatabase();
-    } catch (err) {
-      console.error('❌ Failed to close databases:', err);
-    }
     app.quit();
-  }
-});
-
-app.on('quit', async () => {
-  try {
-    await closeDatabase();
-  } catch (err) {
-    console.error('❌ Failed to close databases on quit:', err);
   }
 });
 

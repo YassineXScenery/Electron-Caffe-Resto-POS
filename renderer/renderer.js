@@ -86,27 +86,30 @@ function showSyncWarning() {
     }, 5000);
 }
 
+// Render categories
 function renderCategories() {
     console.log('ℹ️ Rendering categories:', state.categories);
     if (!categoriesContainer) {
         console.error('❌ Categories container not found');
         return;
     }
-    categoriesContainer.innerHTML = state.categories.map(category => {
-        try {
-            return `
-                <button 
-                    class="px-4 py-2 rounded-md ${state.selectedCategory === category.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}"
-                    onclick="selectCategory(${category.id})"
-                >
-                    ${category.categorie}
-                </button>
-            `;
-        } catch (err) {
-            console.error(`❌ Error rendering category ${category.id}:`, err);
-            return '';
-        }
-    }).join('');
+
+    // Add "All" button first
+    categoriesContainer.innerHTML = `
+        <button class="category-btn ${!state.selectedCategory ? 'active' : ''}" 
+                onclick="selectCategory(null)">
+            All
+        </button>
+    `;
+
+    // Add other category buttons
+    categoriesContainer.innerHTML += state.categories.map(category => `
+        <button class="category-btn ${state.selectedCategory === category.id ? 'active' : ''}" 
+                onclick="selectCategory(${category.id})">
+            ${category.categorie}
+        </button>
+    `).join('');
+    console.log('ℹ️ Categories container updated:', categoriesContainer.innerHTML);
 }
 
 function renderMenuItems() {
@@ -122,9 +125,25 @@ function renderMenuItems() {
     console.log('ℹ️ Filtered items to render:', items);
     menuItemsContainer.innerHTML = items.map(item => {
         try {
+            // Handle image path
+            let imagePath = 'placeholder.jpg';
+            if (item.image) {
+                // If the image path is already a full URL, use it directly
+                if (item.image.startsWith('http')) {
+                    imagePath = item.image;
+                } else {
+                    // Otherwise, use the path relative to the app's root
+                    imagePath = item.image.startsWith('/') ? item.image.slice(1) : item.image;
+                    // Add http://localhost:3000/ prefix
+                    imagePath = `http://localhost:3000/${imagePath}`;
+                    console.log('ℹ️ Using image path:', imagePath);
+                }
+            }
+
             return `
                 <div class="menu-item bg-white p-4 border rounded-lg shadow-md cursor-pointer" onclick="addToCart(${item.item_id})">
-                    <img src="${item.image || 'placeholder.jpg'}" alt="${item.item_name}" class="w-full h-32 object-cover rounded-md mb-2" />
+                    <img src="${imagePath}" alt="${item.item_name}" class="w-full h-32 object-cover rounded-md mb-2" 
+                         onerror="this.onerror=null; this.src='placeholder.jpg'; console.log('Failed to load image:', '${imagePath}');" />
                     <h3 class="font-semibold">${item.item_name.trim()}</h3>
                     <p class="text-blue-500 font-semibold">${formatPrice(item.item_price)}</p>
                 </div>
@@ -178,18 +197,33 @@ async function handleLogin(event) {
     event.preventDefault();
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    console.log(`ℹ️ Frontend login attempt for ${username}`);
+    const rememberMe = document.getElementById('remember-me').checked;
+    console.log(`ℹ️ Login attempt for ${username}, remember me: ${rememberMe}`);
 
     try {
-        const user = await window.api.login({ username, password });
-        console.log('✅ Frontend login successful:', user);
-        state.currentUser = user;
-        loginScreen.classList.add('hidden');
-        posInterface.classList.remove('hidden');
-        await loadInitialData();
+        const result = await window.api.login({ username, password });
+        if (result.success) {
+            console.log('✅ Login successful, handling remember me...');
+            if (rememberMe) {
+                console.log('ℹ️ Remember me checked, storing credentials...');
+                await window.api.storeCredentials({ username, password });
+                console.log('✅ Credentials stored');
+            } else {
+                console.log('ℹ️ Remember me not checked, clearing any saved credentials...');
+                await window.api.clearCredentials();
+            }
+            
+            state.currentUser = result.user;
+            loginScreen.classList.add('hidden');
+            posInterface.classList.remove('hidden');
+            await loadInitialData();
+        } else {
+            console.error('❌ Login failed:', result.message);
+            showNotification(result.message || 'Login failed', 'error');
+        }
     } catch (error) {
-        console.error('❌ Frontend login failed:', error);
-        alert('Invalid credentials');
+        console.error('❌ Login error:', error);
+        showNotification('Login failed: ' + error.message, 'error');
     }
 }
 
@@ -206,15 +240,12 @@ async function handleLogout() {
     }
 }
 
-async function selectCategory(categoryId) {
-    try {
-        console.log('ℹ️ Selecting category:', categoryId);
-        state.selectedCategory = categoryId;
-        renderCategories();
-        renderMenuItems();
-    } catch (err) {
-        console.error('❌ Failed to select category:', err);
-    }
+// Select category
+function selectCategory(categoryId) {
+    console.log('ℹ️ Selecting category:', categoryId);
+    state.selectedCategory = categoryId;
+    renderCategories();
+    renderMenuItems();
 }
 
 function addToCart(itemId) {
@@ -365,3 +396,126 @@ window.addEventListener('offline', checkConnection);
 // Initialize
 checkConnection();
 setInterval(checkConnection, 30000);
+
+// Add sync button handler
+document.getElementById('syncButton').addEventListener('click', async () => {
+  const button = document.getElementById('syncButton');
+  button.disabled = true;
+  button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+  
+  try {
+    console.log('ℹ️ Starting manual sync...');
+    
+    // Sync data first
+    const result = await window.api.forceSync();
+    if (!result) {
+      throw new Error('Data sync failed');
+    }
+    
+    // Then sync images
+    console.log('ℹ️ Starting image sync...');
+    const imageResult = await window.api.syncImages();
+    if (!imageResult) {
+      throw new Error('Image sync failed');
+    }
+    
+    console.log('✅ Manual sync completed successfully');
+    showNotification('Sync completed successfully', 'success');
+    
+    // Reload all data after sync
+    await loadInitialData();
+  } catch (err) {
+    console.error('❌ Manual sync error:', err);
+    showNotification('Sync failed: ' + (err.message || "unknown"), 'error');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '<i class="fas fa-sync"></i> Sync Now';
+  }
+});
+
+// Add notification function if not exists
+function showNotification(message, type = 'info') {
+  const notification = document.createElement('div');
+  notification.className = `fixed top-4 right-4 p-4 rounded shadow-lg ${
+    type === 'success' ? 'bg-green-500' : 
+    type === 'error' ? 'bg-red-500' : 
+    'bg-blue-500'
+  } text-white`;
+  notification.innerHTML = message;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.remove();
+  }, 3000);
+}
+
+// Add these functions after the existing code
+async function saveCredentials(username, password) {
+    try {
+        await window.api.storeCredentials({ username, password });
+        console.log('✅ Credentials saved');
+    } catch (err) {
+        console.error('❌ Failed to save credentials:', err);
+    }
+}
+
+async function loadSavedCredentials() {
+    try {
+        const credentials = await window.api.loadCredentials();
+        if (credentials) {
+            document.getElementById('username').value = credentials.username;
+            document.getElementById('password').value = credentials.password;
+            document.getElementById('remember-me').checked = true;
+            console.log('✅ Loaded saved credentials');
+        }
+    } catch (err) {
+        console.error('❌ Failed to load credentials:', err);
+    }
+}
+
+// Add this function to handle auto-login
+async function attemptAutoLogin() {
+    try {
+        console.log('ℹ️ Attempting auto-login...');
+        const credentials = await window.api.loadCredentials();
+        if (credentials) {
+            console.log('ℹ️ Found saved credentials, attempting login...');
+            const result = await window.api.login(credentials);
+            if (result.success) {
+                console.log('✅ Auto-login successful');
+                state.currentUser = result.user;
+                loginScreen.classList.add('hidden');
+                posInterface.classList.remove('hidden');
+                await loadInitialData();
+                return true;
+            } else {
+                console.log('❌ Auto-login failed:', result.message);
+                // Clear invalid credentials
+                await window.api.clearCredentials();
+            }
+        } else {
+            console.log('ℹ️ No saved credentials found');
+        }
+        return false;
+    } catch (err) {
+        console.error('❌ Auto-login error:', err);
+        return false;
+    }
+}
+
+// Update the window load handler
+window.addEventListener('load', async () => {
+    // Try auto-login first
+    const autoLoginSuccess = await attemptAutoLogin();
+    if (!autoLoginSuccess) {
+        // If auto-login fails, show login screen
+        loginScreen.classList.remove('hidden');
+        posInterface.classList.add('hidden');
+    }
+    
+    // Check connection status
+    await checkConnection();
+    
+    // Set up periodic connection check
+    setInterval(checkConnection, 30000);
+});

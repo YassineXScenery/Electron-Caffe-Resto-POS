@@ -1,137 +1,140 @@
 const axios = require('axios');
-const { executeQuery, sqliteConnection, syncOfflineChanges, isOnline } = require('./connection');
+const config = require('../config');
+const { isOnline } = require('./network');
+const offlineStorage = require('./offline-storage');
+const mysql = require('mysql2/promise');
 
-const API_BASE_URL = 'http://localhost:3000/api';
+// MySQL connection pool
+const pool = mysql.createPool({
+    host: 'localhost',
+    user: 'root',
+    password: '123456789ya',
+    database: 'menu_db',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
 
-async function getAuthToken() {
-  return process.env.API_TOKEN || null;
-}
+// Initialize MySQL tables
+async function initializeMySQL() {
+    try {
+        const connection = await pool.getConnection();
+        
+        // Create menu table
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS menu (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                categorie VARCHAR(255) NOT NULL,
+                image TEXT
+            )
+        `);
 
-async function syncFromRemote() {
-  if (!sqliteConnection) {
-    console.error('❌ syncFromRemote failed: No SQLite connection');
-    return false;
-  }
+        // Create items table
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS items (
+                item_id INT PRIMARY KEY AUTO_INCREMENT,
+                item_name VARCHAR(255) NOT NULL,
+                category_id INT,
+                item_price DECIMAL(10,2),
+                image TEXT,
+                FOREIGN KEY (category_id) REFERENCES menu(id)
+            )
+        `);
 
-  try {
-    const token = await getAuthToken();
-    const catRes = await axios.get(`${API_BASE_URL}/menu`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    });
-    const categories = catRes.data;
+        // Create orders table
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS orders (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                table_number INT NOT NULL,
+                total DECIMAL(10,2) NOT NULL,
+                status VARCHAR(50) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                synced BOOLEAN DEFAULT FALSE
+            )
+        `);
 
-    sqliteConnection.run('DELETE FROM menu');
-    const insertCategory = sqliteConnection.prepare(
-      'INSERT INTO menu (id, categorie, image) VALUES (?, ?, ?)'
-    );
-    for (const category of categories) {
-      insertCategory.run(category.id, category.categorie, category.image);
+        // Create order_items table
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS order_items (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                order_id BIGINT,
+                item_id INT,
+                quantity INT NOT NULL,
+                price DECIMAL(10,2) NOT NULL,
+                FOREIGN KEY (order_id) REFERENCES orders(id),
+                FOREIGN KEY (item_id) REFERENCES items(item_id)
+            )
+        `);
+
+        // Create admins table
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS admins (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(255) NOT NULL UNIQUE,
+                password VARCHAR(255) NOT NULL,
+                photo TEXT
+            )
+        `);
+
+        connection.release();
+        console.log('✅ MySQL tables initialized');
+        return true;
+    } catch (err) {
+        console.error('❌ Failed to initialize MySQL:', err);
+        return false;
     }
-    insertCategory.finalize();
-    console.log(`✅ Categories synced: ${categories.length}`);
+}
 
-    const itemRes = await axios.get(`${API_BASE_URL}/items`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    });
-    const items = itemRes.data;
-
-    sqliteConnection.run('DELETE FROM items');
-    const insertItem = sqliteConnection.prepare(
-      'INSERT INTO items (item_id, item_name, category_id, item_price, image) VALUES (?, ?, ?, ?, ?)'
-    );
-    for (const item of items) {
-      insertItem.run(item.item_id, item.item_name, item.category_id, item.item_price, item.image);
+// Sync data from local database
+async function syncFromLocal() {
+    try {
+        const connection = await pool.getConnection();
+        
+        // Get all categories and items
+        const [categories] = await connection.query('SELECT * FROM menu ORDER BY id');
+        const [items] = await connection.query('SELECT * FROM items ORDER BY item_id');
+        
+        // Save to offline storage
+        offlineStorage.saveMenu(categories, items);
+        offlineStorage.updateLastSync();
+        
+        connection.release();
+        console.log('✅ Data synced to offline storage');
+        return true;
+    } catch (err) {
+        console.error('❌ Local sync failed:', err);
+        return false;
     }
-    insertItem.finalize();
-    console.log(`✅ Items synced: ${items.length}`);
-
-    sqliteConnection.run(
-      `INSERT INTO sync_status (last_sync, sync_type) VALUES (CURRENT_TIMESTAMP, 'full')`
-    );
-
-    return true;
-  } catch (err) {
-    console.error('❌ Sync failed:', err.response?.data || err.message);
-    return false;
-  }
 }
 
-async function syncAdmin() {
-  if (!sqliteConnection) {
-    console.error('❌ syncAdmin failed: No SQLite connection');
-    return false;
-  }
-
-  const online = await isOnline();
-  if (!online) {
-    console.warn('⚠️ Cannot sync admins: POS is offline');
-    return false;
-  }
-
-  try {
-    const admins = await executeQuery('SELECT id, username, password, photo FROM admins');
-    sqliteConnection.run('DELETE FROM admins');
-    const insertAdmin = sqliteConnection.prepare(
-      'INSERT INTO admins (id, username, password, photo) VALUES (?, ?, ?, ?)'
-    );
-    for (const admin of admins) {
-      insertAdmin.run(admin.id, admin.username, admin.password, admin.photo);
-    }
-    insertAdmin.finalize();
-    console.log(`✅ Admins synced: ${admins.length}`);
-    return true;
-  } catch (err) {
-    console.error('❌ Admin sync failed:', err);
-    return false;
-  }
+// Force sync
+async function forceSync() {
+    console.log('ℹ️ Starting local sync...');
+    return await syncFromLocal();
 }
 
-async function syncPendingOrders() {
-  try {
-    await syncOfflineChanges();
-    console.log('✅ Pending orders synced');
-    return true;
-  } catch (err) {
-    console.error('❌ Pending orders sync failed:', err);
-    return false;
-  }
-}
-
-async function getLastSyncTime() {
-  if (!sqliteConnection) {
-    console.error('❌ getLastSyncTime failed: No SQLite connection');
-    return null;
-  }
-
-  try {
-    const result = sqliteConnection.prepare(
-      'SELECT last_sync FROM sync_status ORDER BY id DESC LIMIT 1'
-    ).get();
-    console.log('✅ Fetched last sync time:', result ? result.last_sync : null);
-    return result ? result.last_sync : null;
-  } catch (err) {
-    console.error('❌ Failed to get last sync time:', err);
-    return null;
-  }
-}
-
+// Check if sync is needed
 async function isSyncNeeded() {
-  try {
     const lastSync = await getLastSyncTime();
-    if (!lastSync) {
-      console.log('ℹ️ Sync needed: No previous sync');
-      return true;
-    }
-    const lastSyncDate = new Date(lastSync);
-    const now = new Date();
-    const hoursSinceLastSync = (now - lastSyncDate) / (1000 * 60 * 60);
-    const needsSync = hoursSinceLastSync > 1;
-    console.log(`ℹ️ Sync ${needsSync ? 'needed' : 'not needed'}: ${hoursSinceLastSync.toFixed(2)} hours since last sync`);
-    return needsSync;
-  } catch (err) {
-    console.error('❌ Failed to check sync status:', err);
-    return true;
-  }
+    return !lastSync;
 }
 
-module.exports = { syncFromRemote, syncPendingOrders, getLastSyncTime, isSyncNeeded, syncAdmin };
+// Get last sync time
+async function getLastSyncTime() {
+    return offlineStorage.getLastSync();
+}
+
+// Sync pending changes
+async function syncPendingChanges() {
+    console.log('ℹ️ No pending changes to sync (local mode)');
+    return true;
+}
+
+module.exports = {
+    initializeMySQL,
+    syncFromLocal,
+    forceSync,
+    isSyncNeeded,
+    getLastSyncTime,
+    syncPendingChanges
+};

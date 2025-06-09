@@ -1,234 +1,216 @@
 const { ipcMain } = require('electron');
-const { executeQuery, sqliteConnection, isOnline } = require('../database/connection');
-const { syncPendingOrders, getLastSyncTime, isSyncNeeded } = require('../database/sync');
+const { executeQuery, isOnline } = require('../database/connection');
+const { syncFromLocal, getLastSyncTime, isSyncNeeded, syncPendingChanges } = require('../database/sync');
 const bcrypt = require('bcryptjs');
+const Store = require('electron-store');
+const { addNetworkListener } = require('../database/network');
+
+// Initialize secure store
+const store = new Store({
+    encryptionKey: 'your-encryption-key', // This should be a secure key in production
+    name: 'pos-credentials'
+});
+
+// Network status listeners
+const networkListeners = new Set();
+
+// Setup network status monitoring
+addNetworkListener((status) => {
+    networkListeners.forEach(listener => listener(status));
+});
 
 ipcMain.handle('db:query', async (event, sql, params) => {
-  console.log(`ℹ️ DB query: ${sql}`, params);
-  return await executeQuery(sql, params);
+    console.log(`ℹ️ DB query: ${sql}`, params);
+    return await executeQuery(sql, params);
 });
 
 ipcMain.handle('db:execute', async (event, sql, params) => {
-  console.log(`ℹ️ DB execute: ${sql}`, params);
-  return await executeQuery(sql, params);
+    console.log(`ℹ️ DB execute: ${sql}`, params);
+    return await executeQuery(sql, params);
 });
 
-ipcMain.handle('auth:login', async (event, credentials) => {
-  console.log('ℹ️ Login attempt:', credentials.username);
-  const { username, password } = credentials;
-  try {
-    const result = await executeQuery(
-      'SELECT * FROM admins WHERE username = ?',
-      [username]
-    );
-    console.log(`ℹ️ Query result for ${username}:`, result);
+ipcMain.handle('login', async (event, { username, password }) => {
+    try {
+        console.log('ℹ️ Login attempt:', username);
+        console.log('ℹ️ Checking if online...');
+        const online = await isOnline();
+        console.log('ℹ️ Online status:', online);
 
-    if (result.length === 0) {
-      console.error('❌ Login failed: User not found');
-      throw new Error('Invalid credentials');
+        // First try to get user from database
+        console.log('ℹ️ Querying database for user...');
+        const result = await executeQuery('SELECT * FROM admins WHERE username = ?', [username]);
+        console.log('ℹ️ Database query result:', result);
+
+        if (result.length === 0) {
+            console.log('❌ Login failed: User not found in database');
+            return { success: false, message: 'User not found' };
+        }
+
+        const storedHash = result[0].password;
+        console.log('ℹ️ Stored password hash:', storedHash);
+        console.log('ℹ️ Attempting to verify password...');
+        
+        const isValid = await bcrypt.compare(password, storedHash);
+        console.log('ℹ️ Password validation result:', isValid);
+
+        if (!isValid) {
+            console.log('❌ Login failed: Invalid password');
+            return { success: false, message: 'Invalid password' };
+        }
+
+        console.log('✅ Login successful for', username);
+        return {
+            success: true,
+            user: {
+                id: result[0].id,
+                username: result[0].username,
+                photo: result[0].photo
+            }
+        };
+    } catch (err) {
+        console.error('❌ Login error:', err);
+        return { success: false, message: err.message };
     }
-
-    const admin = result[0];
-    const validPassword = await bcrypt.compare(password, admin.password);
-    console.log(`ℹ️ Password valid: ${validPassword}`);
-
-    if (!validPassword) {
-      console.error('❌ Login failed: Invalid password');
-      throw new Error('Invalid credentials');
-    }
-
-    const online = await isOnline();
-    if (online && sqliteConnection) {
-      try {
-        sqliteConnection.run('DELETE FROM admins WHERE username = ?', [username]);
-        sqliteConnection.run(
-          'INSERT INTO admins (id, username, password, photo) VALUES (?, ?, ?, ?)',
-          [admin.id, admin.username, admin.password, admin.photo]
-        );
-        console.log(`✅ Admin ${username} synced to SQLite`);
-      } catch (err) {
-        console.error('⚠️ Failed to sync admin to SQLite:', err);
-      }
-    }
-
-    console.log(`✅ Login successful for ${username}`);
-    return { id: admin.id, username: admin.username, photo: admin.photo };
-  } catch (err) {
-    console.error('❌ Login error:', err.message);
-    throw err;
-  }
 });
 
-ipcMain.handle('auth:logout', () => {
-  console.log('ℹ️ User logged out');
-  return true;
+ipcMain.handle('logout', () => {
+    console.log('ℹ️ User logged out');
+    return true;
 });
 
 ipcMain.handle('orders:create', async (event, orderData) => {
-  const { items, table_number, total } = orderData;
-  console.log(`ℹ️ Creating order for table ${table_number}, total: ${total}`);
+    const { items, table_number, total } = orderData;
+    console.log(`ℹ️ Creating order for table ${table_number}, total: ${total}`);
 
-  const result = await executeQuery(
-    'INSERT INTO orders (table_number, total, status) VALUES (?, ?, ?)',
-    [table_number, total, 'pending']
-  );
+    try {
+        const result = await executeQuery(
+            'INSERT INTO orders (table_number, total, status, created_at) VALUES (?, ?, ?, NOW())',
+            [table_number, total, 'pending']
+        );
 
-  const orderId = result.insertId;
+        const orderId = result.insertId;
 
-  for (const item of items) {
-    await executeQuery(
-      'INSERT INTO order_items (order_id, item_id, quantity, price) VALUES (?, ?, ?, ?)',
-      [orderId, item.item_id, item.quantity, item.item_price]
-    );
-  }
+        for (const item of items) {
+            await executeQuery(
+                'INSERT INTO order_items (order_id, item_id, quantity, price) VALUES (?, ?, ?, ?)',
+                [orderId, item.item_id, item.quantity, item.item_price]
+            );
+        }
 
-  console.log(`✅ Order ${orderId} created`);
-  return { orderId, status: 'success' };
+        console.log(`✅ Order ${orderId} created`);
+        return { orderId, status: 'success' };
+    } catch (err) {
+        console.error('❌ Failed to create order:', err);
+        return { status: 'error', message: err.message };
+    }
 });
 
 ipcMain.handle('orders:get', async (event, filters) => {
-  const { status, date_from, date_to } = filters || {};
-  console.log('ℹ️ Fetching orders with filters:', filters);
-  let sql = 'SELECT * FROM orders WHERE 1=1';
-  const params = [];
+    const { status, date_from, date_to } = filters || {};
+    console.log('ℹ️ Fetching orders with filters:', filters);
+    let sql = 'SELECT * FROM orders WHERE 1=1';
+    const params = [];
 
-  if (status) {
-    sql += ' AND status = ?';
-    params.push(status);
-  }
+    if (status) {
+        sql += ' AND status = ?';
+        params.push(status);
+    }
 
-  if (date_from) {
-    sql += ' AND created_at >= ?';
-    params.push(date_from);
-  }
+    if (date_from) {
+        sql += ' AND created_at >= ?';
+        params.push(date_from);
+    }
 
-  if (date_to) {
-    sql += ' AND created_at <= ?';
-    params.push(date_to);
-  }
+    if (date_to) {
+        sql += ' AND created_at <= ?';
+        params.push(date_to);
+    }
 
-  sql += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY created_at DESC';
 
-  const orders = await executeQuery(sql, params);
-  console.log(`✅ Fetched ${orders.length} orders`);
-  return orders;
+    try {
+        const orders = await executeQuery(sql, params);
+        console.log(`✅ Fetched ${orders.length} orders`);
+        return orders;
+    } catch (err) {
+        console.error('❌ Failed to fetch orders:', err);
+        return [];
+    }
 });
 
 ipcMain.handle('menu:categories', async () => {
-  console.log('ℹ️ Fetching menu categories');
-  try {
     const categories = await executeQuery('SELECT * FROM menu ORDER BY id');
-    console.log(`✅ Fetched ${categories.length} categories:`, categories);
+    console.log('ℹ️ Fetched categories:', categories);
     return categories;
-  } catch (err) {
-    console.error('❌ Failed to fetch categories:', err);
-    return [];
-  }
 });
 
 ipcMain.handle('menu:items', async (event, categoryId) => {
-  console.log(`ℹ️ Fetching items for category: ${categoryId || 'all'}`);
-  try {
-    if (categoryId) {
-      const items = await executeQuery(
-        'SELECT * FROM items WHERE category_id = ? ORDER BY item_name',
-        [categoryId]
-      );
-      console.log(`✅ Fetched ${items.length} items for category ${categoryId}:`, items);
-      return items;
-    }
-    const items = await executeQuery('SELECT * FROM items ORDER BY item_name');
-    console.log(`✅ Fetched ${items.length} items:`, items);
+    const query = categoryId ? 
+        'SELECT * FROM items WHERE category_id = ? ORDER BY item_name' :
+        'SELECT * FROM items ORDER BY item_name';
+    const params = categoryId ? [categoryId] : [];
+    const items = await executeQuery(query, params);
+    console.log('ℹ️ Fetched items:', items);
     return items;
-  } catch (err) {
-    console.error('❌ Failed to fetch items:', err);
-    return [];
-  }
 });
 
-ipcMain.handle('tables:get', async () => {
-  console.log('ℹ️ Fetching tables');
-  const tables = await executeQuery('SELECT * FROM tables ORDER BY table_number');
-  console.log(`✅ Fetched ${tables.length} tables`);
-  return tables;
-});
-
-ipcMain.handle('waiter:call', async (event, tableNumber) => {
-  console.log(`ℹ️ Waiter called for table ${tableNumber}`);
-  const result = await executeQuery(
-    'INSERT INTO call_waiter_requests (table_number) VALUES (?)',
-    [tableNumber]
-  );
-  console.log('✅ Waiter call recorded');
-  return result;
-});
-
-ipcMain.handle('waiter:requests', async () => {
-  console.log('ℹ️ Fetching waiter requests');
-  const requests = await executeQuery(
-    'SELECT * FROM call_waiter_requests WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR) ORDER BY created_at DESC'
-  );
-  console.log(`✅ Fetched ${requests.length} waiter requests`);
-  return requests;
-});
-
-ipcMain.handle('feedback:submit', async (event, message) => {
-  console.log('ℹ️ Submitting feedback:', message);
-  const result = await executeQuery(
-    'INSERT INTO feedback (message) VALUES (?)',
-    [message]
-  );
-  console.log('✅ Feedback submitted');
-  return result;
-});
-
-ipcMain.handle('feedback:get', async () => {
-  console.log('ℹ️ Fetching feedback');
-  const feedback = await executeQuery(
-    'SELECT * FROM feedback ORDER BY created_at DESC LIMIT 50'
-  );
-  console.log(`✅ Fetched ${feedback.length} feedback entries`);
-  return feedback;
-});
-
-ipcMain.handle('settings:get', async () => {
-  console.log('ℹ️ Fetching settings');
-  const settings = await executeQuery('SELECT * FROM footer_settings');
-  console.log(`✅ Fetched ${settings.length} settings`);
-  return settings;
-});
-
-ipcMain.handle('settings:update', async (event, settings) => {
-  const { id, ...updateData } = settings;
-  console.log('ℹ️ Updating settings for id:', id);
-  const fields = Object.keys(updateData);
-  const values = Object.values(updateData);
-
-  const sql = `UPDATE footer_settings SET ${fields.map(f => `${f} = ?`).join(', ')} WHERE id = ?`;
-  values.push(id);
-
-  const result = await executeQuery(sql, values);
-  console.log('✅ Settings updated');
-  return result;
-});
-
-ipcMain.handle('sync:pendingOrders', async () => {
-  console.log('ℹ️ Syncing pending orders');
-  const result = await syncPendingOrders();
-  console.log(`✅ Pending orders sync result: ${result}`);
-  return result;
+ipcMain.handle('sync:force', async () => {
+    console.log('ℹ️ Forcing sync...');
+    return await syncFromLocal();
 });
 
 ipcMain.handle('sync:lastSyncTime', async () => {
-  console.log('ℹ️ Fetching last sync time');
-  const result = await getLastSyncTime();
-  console.log(`✅ Last sync time: ${result}`);
-  return result;
+    return await getLastSyncTime();
 });
 
 ipcMain.handle('sync:isNeeded', async () => {
-  console.log('ℹ️ Checking if sync is needed');
-  const result = await isSyncNeeded();
-  console.log(`✅ Sync needed: ${result}`);
-  return result;
+    return await isSyncNeeded();
+});
+
+ipcMain.handle('sync:pendingChanges', async () => {
+    return await syncPendingChanges();
+});
+
+ipcMain.handle('network:status', async () => {
+    console.log('ℹ️ Getting network status');
+    try {
+        const status = await isOnline();
+        console.log('✅ Network status:', status);
+        return status;
+    } catch (err) {
+        console.error('❌ Failed to get network status:', err);
+        return false;
+    }
+});
+
+// Store credentials
+ipcMain.handle('store:credentials', async (event, credentials) => {
+    try {
+        await store.set('credentials', credentials);
+        return true;
+    } catch (err) {
+        console.error('❌ Failed to store credentials:', err);
+        return false;
+    }
+});
+
+// Load credentials
+ipcMain.handle('load:credentials', async () => {
+    try {
+        return store.get('credentials');
+    } catch (err) {
+        console.error('❌ Failed to load credentials:', err);
+        return null;
+    }
+});
+
+// Clear credentials
+ipcMain.handle('clear:credentials', async () => {
+    try {
+        await store.delete('credentials');
+        return true;
+    } catch (err) {
+        console.error('❌ Failed to clear credentials:', err);
+        return false;
+    }
 });
