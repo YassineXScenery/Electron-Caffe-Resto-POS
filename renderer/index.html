@@ -23,6 +23,26 @@
     </style>
 </head>
 <body class="bg-gray-100">
+    <!-- Side Menu for Pending Orders -->
+    <div id="side-menu" class="fixed right-0 top-0 h-full w-96 bg-white shadow-lg transform translate-x-full transition-transform duration-300 ease-in-out z-50">
+        <div class="p-4 border-b">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-bold">Pending Orders</h2>
+                <button id="close-side-menu" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div id="pending-orders" class="overflow-y-auto h-[calc(100%-4rem)] p-4">
+            <!-- Pending orders will be inserted here -->
+        </div>
+    </div>
+
+    <!-- Toggle Side Menu Button -->
+    <button id="toggle-side-menu" class="fixed right-4 top-4 bg-blue-600 text-white p-2 rounded-full shadow-lg hover:bg-blue-700 z-40">
+        <i class="fas fa-receipt"></i>
+    </button>
+
     <div id="app" class="min-h-screen">
         <!-- Login Screen -->
         <div id="login-screen" class="fixed inset-0 bg-gray-900 flex items-center justify-center">
@@ -127,6 +147,41 @@
         </div>
     </div>
 
+    <!-- Payment Modal for New Orders -->
+    <div id="payment-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-96">
+            <h2 class="text-2xl font-bold mb-4">Select Payment Method</h2>
+            <div class="space-y-4">
+                <button id="cash-payment-btn" class="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    <i class="fas fa-money-bill-wave mr-2"></i>Pay with Cash
+                </button>
+                <button id="card-payment-btn" class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <i class="fas fa-credit-card mr-2"></i>Pay with Card
+                </button>
+                <button id="pay-later-btn" class="w-full bg-yellow-600 text-white py-3 px-4 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2">
+                    <i class="fas fa-clock mr-2"></i>Pay Later
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Modal for Pending Orders -->
+    <div id="pending-payment-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-96">
+            <h2 class="text-2xl font-bold mb-4">Process Payment</h2>
+            <div class="space-y-4">
+                <button id="pending-cash-payment-btn" class="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    <i class="fas fa-money-bill-wave mr-2"></i>Pay with Cash
+                </button>
+                <button id="pending-card-payment-btn" class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <i class="fas fa-credit-card mr-2"></i>Pay with Card
+                </button>
+                <button id="cancel-order-btn" class="w-full bg-red-600 text-white py-3 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    <i class="fas fa-times-circle mr-2"></i>Cancel Order
+                </button>
+            </div>
+        </div>
+    </div>
     <script src="renderer.js"></script>
 </body>
 </html>

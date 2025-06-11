@@ -79,13 +79,13 @@ ipcMain.handle('logout', () => {
 });
 
 ipcMain.handle('orders:create', async (event, orderData) => {
-    const { items, table_number, total } = orderData;
-    console.log(`ℹ️ Creating order for table ${table_number}, total: ${total}`);
+    const { items, table_number, total, payment_method, status, notes } = orderData;
+    console.log(`ℹ️ Creating order for table ${table_number}, total: ${total}, payment: ${payment_method}`);
 
     try {
         const result = await executeQuery(
-            'INSERT INTO orders (table_number, total, status, created_at) VALUES (?, ?, ?, NOW())',
-            [table_number, total, 'pending']
+            'INSERT INTO orders (table_number, total, status, payment_method, notes, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+            [table_number, total, status || 'pending', payment_method || 'cash', notes]
         );
 
         const orderId = result.insertId;
@@ -135,6 +135,23 @@ ipcMain.handle('orders:get', async (event, filters) => {
     } catch (err) {
         console.error('❌ Failed to fetch orders:', err);
         return [];
+    }
+});
+
+ipcMain.handle('orders:updateStatus', async (event, orderId, status, paymentMethod) => {
+    console.log(`ℹ️ Updating order ${orderId} status to ${status} with payment method ${paymentMethod}`);
+
+    try {
+        await executeQuery(
+            'UPDATE orders SET status = ?, payment_method = ?, updated_at = NOW() WHERE id = ?',
+            [status, paymentMethod, orderId]
+        );
+
+        console.log(`✅ Order ${orderId} updated successfully`);
+        return { status: 'success' };
+    } catch (err) {
+        console.error('❌ Failed to update order:', err);
+        return { status: 'error', message: err.message };
     }
 });
 

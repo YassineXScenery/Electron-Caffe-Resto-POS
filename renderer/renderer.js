@@ -27,6 +27,22 @@ const orderNotesInput = document.getElementById('order-notes');
 const placeOrderBtn = document.getElementById('place-order-btn');
 const connectionStatus = document.getElementById('connection-status');
 
+// Payment modal elements
+const paymentModal = document.getElementById('payment-modal');
+const pendingPaymentModal = document.getElementById('pending-payment-modal');
+const cashPaymentBtn = document.getElementById('cash-payment-btn');
+const cardPaymentBtn = document.getElementById('card-payment-btn');
+const payLaterBtn = document.getElementById('pay-later-btn');
+const pendingCashPaymentBtn = document.getElementById('pending-cash-payment-btn');
+const pendingCardPaymentBtn = document.getElementById('pending-card-payment-btn');
+const cancelOrderBtn = document.getElementById('cancel-order-btn');
+
+// Side menu elements
+const sideMenu = document.getElementById('side-menu');
+const toggleSideMenuBtn = document.getElementById('toggle-side-menu');
+const closeSideMenuBtn = document.getElementById('close-side-menu');
+const pendingOrdersContainer = document.getElementById('pending-orders');
+
 // Utility functions
 function formatPrice(price) {
     const numPrice = parseFloat(price);
@@ -328,6 +344,85 @@ async function submitFeedback() {
     }
 }
 
+function showPaymentModal() {
+    paymentModal.classList.remove('hidden');
+}
+
+function hidePaymentModal() {
+    paymentModal.classList.add('hidden');
+}
+
+function showPendingPaymentModal() {
+    pendingPaymentModal.classList.remove('hidden');
+}
+
+function hidePendingPaymentModal() {
+    pendingPaymentModal.classList.add('hidden');
+}
+
+async function handleCashPayment(orderData) {
+    try {
+        const result = await window.api.createOrder({
+            ...orderData,
+            payment_method: 'cash',
+            status: 'paid'
+        });
+        
+        if (result.status === 'success') {
+            state.cart = [];
+            tableNumberInput.value = '';
+            orderNotesInput.value = '';
+            renderCart();
+            hidePaymentModal();
+            alert('Order placed and paid successfully!');
+        }
+    } catch (err) {
+        alert('Failed to process cash payment: ' + err.message);
+    }
+}
+
+async function handleCardPayment(orderData) {
+    try {
+        const result = await window.api.createOrder({
+            ...orderData,
+            payment_method: 'card',
+            status: 'pending'
+        });
+        
+        if (result.status === 'success') {
+            state.cart = [];
+            tableNumberInput.value = '';
+            orderNotesInput.value = '';
+            renderCart();
+            hidePaymentModal();
+            alert('Order placed! Card payment integration coming soon.');
+        }
+    } catch (err) {
+        alert('Failed to process card payment: ' + err.message);
+    }
+}
+
+async function handlePayLater(orderData) {
+    try {
+        const result = await window.api.createOrder({
+            ...orderData,
+            payment_method: 'cash',
+            status: 'pending'
+        });
+        
+        if (result.status === 'success') {
+            state.cart = [];
+            tableNumberInput.value = '';
+            orderNotesInput.value = '';
+            renderCart();
+            hidePaymentModal();
+            alert('Order placed! Payment pending.');
+        }
+    } catch (err) {
+        alert('Failed to process order: ' + err.message);
+    }
+}
+
 async function placeOrder() {
     if (state.cart.length === 0) {
         alert('Cart is empty');
@@ -337,21 +432,11 @@ async function placeOrder() {
     const orderData = {
         items: state.cart,
         table_number: parseInt(tableNumberInput.value) || null,
-        total: parseFloat(totalElement.textContent.replace('$', ''))
+        total: parseFloat(totalElement.textContent.replace('$', '')),
+        notes: orderNotesInput.value
     };
 
-    try {
-        const result = await window.api.createOrder(orderData);
-        if (result.status === 'success') {
-            state.cart = [];
-            tableNumberInput.value = '';
-            orderNotesInput.value = '';
-            renderCart();
-            alert('Order placed successfully!');
-        }
-    } catch (err) {
-        alert('Failed to place order: ' + err.message);
-    }
+    showPaymentModal();
 }
 
 // Data loading
@@ -519,3 +604,134 @@ window.addEventListener('load', async () => {
     // Set up periodic connection check
     setInterval(checkConnection, 30000);
 });
+
+// Add event listeners for payment buttons
+cashPaymentBtn.addEventListener('click', () => {
+    const orderData = {
+        items: state.cart,
+        table_number: parseInt(tableNumberInput.value) || null,
+        total: parseFloat(totalElement.textContent.replace('$', '')),
+        notes: orderNotesInput.value
+    };
+    handleCashPayment(orderData);
+});
+
+cardPaymentBtn.addEventListener('click', () => {
+    const orderData = {
+        items: state.cart,
+        table_number: parseInt(tableNumberInput.value) || null,
+        total: parseFloat(totalElement.textContent.replace('$', '')),
+        notes: orderNotesInput.value
+    };
+    handleCardPayment(orderData);
+});
+
+payLaterBtn.addEventListener('click', () => {
+    const orderData = {
+        items: state.cart,
+        table_number: parseInt(tableNumberInput.value) || null,
+        total: parseFloat(totalElement.textContent.replace('$', '')),
+        notes: orderNotesInput.value
+    };
+    handlePayLater(orderData);
+});
+
+// Toggle side menu
+function toggleSideMenu() {
+    sideMenu.classList.toggle('translate-x-full');
+    renderPendingOrders(); // Refresh orders when opening the menu
+}
+
+// Close side menu
+function closeSideMenu() {
+    sideMenu.classList.add('translate-x-full');
+}
+
+// Format date
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+// Render pending orders
+async function renderPendingOrders() {
+    try {
+        const orders = await window.api.getOrders({ status: 'pending' });
+        pendingOrdersContainer.innerHTML = orders.map(order => `
+            <div class="bg-white rounded-lg shadow p-4 mb-4">
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <h3 class="font-bold">Order #${order.id}</h3>
+                        <p class="text-sm text-gray-600">Table: ${order.table_number || 'N/A'}</p>
+                        <p class="text-sm text-gray-600">Created: ${formatDate(order.created_at)}</p>
+                    </div>
+                    <span class="text-lg font-bold">${formatPrice(order.total)}</span>
+                </div>
+                <div class="border-t pt-2 mt-2">
+                    <button onclick="showPaymentOptions(${order.id}, ${order.total})" 
+                            class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                        Process Payment
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (err) {
+        console.error('Failed to fetch pending orders:', err);
+        pendingOrdersContainer.innerHTML = '<p class="text-red-500">Failed to load pending orders</p>';
+    }
+}
+
+// Show payment options for a specific order
+async function showPaymentOptions(orderId, total) {
+    const orderData = {
+        orderId,
+        total,
+        payment_method: null,
+        status: null
+    };
+
+    // Show pending payment modal
+    showPendingPaymentModal();
+
+    // Update payment button handlers for this specific order
+    pendingCashPaymentBtn.onclick = async () => {
+        try {
+            await window.api.updateOrderStatus(orderId, 'paid', 'cash');
+            hidePendingPaymentModal();
+            renderPendingOrders(); // Refresh the pending orders list
+            alert('Order marked as paid!');
+        } catch (err) {
+            alert('Failed to process payment: ' + err.message);
+        }
+    };
+
+    pendingCardPaymentBtn.onclick = async () => {
+        try {
+            await window.api.updateOrderStatus(orderId, 'pending', 'card');
+            hidePendingPaymentModal();
+            alert('Card payment integration coming soon!');
+        } catch (err) {
+            alert('Failed to process payment: ' + err.message);
+        }
+    };
+
+    cancelOrderBtn.onclick = async () => {
+        if (confirm('Are you sure you want to cancel this order?')) {
+            try {
+                await window.api.updateOrderStatus(orderId, 'cancelled', 'cash');
+                hidePendingPaymentModal();
+                renderPendingOrders(); // Refresh the pending orders list
+                alert('Order has been cancelled');
+            } catch (err) {
+                alert('Failed to cancel order: ' + err.message);
+            }
+        }
+    };
+}
+
+// Add event listeners for side menu
+toggleSideMenuBtn.addEventListener('click', toggleSideMenu);
+closeSideMenuBtn.addEventListener('click', closeSideMenu);
+
+// Refresh pending orders every 30 seconds
+setInterval(renderPendingOrders, 30000);

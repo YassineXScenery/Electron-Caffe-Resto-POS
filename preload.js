@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld(
     // Orders
     createOrder: (orderData) => ipcRenderer.invoke('orders:create', orderData),
     getOrders: (filters) => ipcRenderer.invoke('orders:get', filters),
+    updateOrderStatus: (orderId, status, paymentMethod) => ipcRenderer.invoke('orders:updateStatus', orderId, status, paymentMethod),
     
     // Menu
     getCategories: () => ipcRenderer.invoke('menu:categories'),

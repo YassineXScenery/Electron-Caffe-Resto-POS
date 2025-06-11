@@ -45,11 +45,13 @@ async function initializeMySQL() {
         await connection.query(`
             CREATE TABLE IF NOT EXISTS orders (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
-                table_number INT NOT NULL,
+                table_number INT,
                 total DECIMAL(10,2) NOT NULL,
-                status VARCHAR(50) NOT NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                synced BOOLEAN DEFAULT FALSE
+                status ENUM('pending', 'paid', 'cancelled') NOT NULL DEFAULT 'pending',
+                payment_method ENUM('cash', 'card', 'pending') NOT NULL DEFAULT 'cash',
+                notes TEXT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         `);
 
